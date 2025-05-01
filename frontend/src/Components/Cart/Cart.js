@@ -5,7 +5,8 @@ import {
   FaShoppingCart, FaHome, FaEnvelope, FaPhone, 
   FaFacebook, FaInstagram, FaWhatsapp, FaUser,
   FaSearch, FaHeart, FaBell, FaBox, FaInfoCircle, 
-  FaCreditCard, FaTruck, FaExchangeAlt, FaQuestionCircle
+  FaCreditCard, FaTruck, FaExchangeAlt, FaQuestionCircle,
+  FaCheck
 } from 'react-icons/fa';
 import './Cart.css';
 
@@ -13,10 +14,13 @@ function Cart() {
   const [cart, setCart] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [showQuantitySuccess, setShowQuantitySuccess] = useState(false);
+  const [quantitySuccessItem, setQuantitySuccessItem] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Load cart from localStorage
     const cartData = JSON.parse(localStorage.getItem('cart')) || [];
     setCart(cartData);
   }, []);
@@ -25,21 +29,60 @@ function Cart() {
     const updatedCart = cart.filter(item => item.productId !== productId);
     localStorage.setItem('cart', JSON.stringify(updatedCart));
     setCart(updatedCart);
+    setShowDeleteModal(false);
+  };
+
+  const confirmDelete = (productId) => {
+    setItemToDelete(productId);
+    setShowDeleteModal(true);
   };
 
   const handleQuantityChange = (productId, change) => {
     const updatedCart = cart.map(item => {
       if (item.productId === productId) {
         const newQuantity = item.quantity + change;
+        if (newQuantity < 1 || newQuantity > 99) return item;
+        
         return {
           ...item,
-          quantity: newQuantity >= 1 ? newQuantity : 1
+          quantity: newQuantity
         };
       }
       return item;
     });
     localStorage.setItem('cart', JSON.stringify(updatedCart));
     setCart(updatedCart);
+    
+    const updatedItem = updatedCart.find(item => item.productId === productId);
+    if (updatedItem) {
+      setQuantitySuccessItem(updatedItem);
+      setShowQuantitySuccess(true);
+      setTimeout(() => setShowQuantitySuccess(false), 2000);
+    }
+  };
+
+  const handleDirectQuantityChange = (productId, e) => {
+    const value = parseInt(e.target.value);
+    if (isNaN(value) || value < 1 || value > 99) return;
+
+    const updatedCart = cart.map(item => {
+      if (item.productId === productId) {
+        return {
+          ...item,
+          quantity: value
+        };
+      }
+      return item;
+    });
+    localStorage.setItem('cart', JSON.stringify(updatedCart));
+    setCart(updatedCart);
+    
+    const updatedItem = updatedCart.find(item => item.productId === productId);
+    if (updatedItem) {
+      setQuantitySuccessItem(updatedItem);
+      setShowQuantitySuccess(true);
+      setTimeout(() => setShowQuantitySuccess(false), 2000);
+    }
   };
 
   const handleClearCart = () => {
@@ -50,14 +93,25 @@ function Cart() {
   };
 
   const handleCheckout = () => {
-    navigate('/mainpayment');
+    const subtotal = cart.reduce((sum, item) => sum + (item.productDetails.price * item.quantity), 0);
+    const shipping = subtotal * 0.05;
+    const tax = subtotal * 0.12;
+    const total = subtotal + shipping + tax;
+    
+    const amountInCents = Math.round(total * 100);
+    
+    navigate('/mainpayment', { 
+      state: { 
+        amount: amountInCents,
+        currency: 'LKR'
+      } 
+    });
   };
 
   const continueShopping = () => {
     navigate('/');
   };
 
-  // Calculate totals
   const subtotal = cart.reduce((sum, item) => sum + (item.productDetails.price * item.quantity), 0);
   const shipping = subtotal * 0.05;
   const tax = subtotal * 0.12;
@@ -65,7 +119,6 @@ function Cart() {
   
   return (
     <div className="cart-page">
-      {/* Header with Updated Color Scheme */}
       <header className="main-header">
         <div className="top-bar">
           <div className="container">
@@ -115,7 +168,6 @@ function Cart() {
         </div>
       </header>
 
-      {/* Cart Content */}
       <main className="cart-container">
         <div className="container">
           <div className="cart-header">
@@ -172,11 +224,18 @@ function Cart() {
                       >
                         <FaMinus />
                       </button>
-                      <span className="quantity-value">{item.quantity}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={item.quantity}
+                        onChange={(e) => handleDirectQuantityChange(item.productId, e)}
+                        className="quantity-input"
+                      />
                       <button 
                         onClick={() => handleQuantityChange(item.productId, 1)}
                         className="quantity-btn plus"
-                        disabled={item.quantity >= 10}
+                        disabled={item.quantity >= 99}
                       >
                         <FaPlus />
                       </button>
@@ -185,7 +244,7 @@ function Cart() {
                       Rs.{(item.productDetails.price * item.quantity).toFixed(2)}
                     </div>
                     <button 
-                      onClick={() => handleRemoveItem(item.productId)}
+                      onClick={() => confirmDelete(item.productId)}
                       className="remove-item-btn"
                       title="Remove item"
                     >
@@ -226,7 +285,38 @@ function Cart() {
         </div>
       </main>
 
-      {/* Footer */}
+      {showDeleteModal && (
+        <div className="modal-overlay">
+          <div className="delete-modal">
+            <h3>Remove Item</h3>
+            <p>Are you sure you want to remove this item from your cart?</p>
+            <div className="modal-buttons">
+              <button 
+                onClick={() => setShowDeleteModal(false)}
+                className="cancel-btn"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => handleRemoveItem(itemToDelete)}
+                className="confirm-btn"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showQuantitySuccess && quantitySuccessItem && (
+        <div className="quantity-success-notification">
+          <div className="success-message">
+            <FaCheck className="success-icon" />
+            <span>Quantity updated to {quantitySuccessItem.quantity} for {quantitySuccessItem.productDetails.name}</span>
+          </div>
+        </div>
+      )}
+
       <footer className="main-footer">
         <div className="footer-container">
           <div className="footer-section">

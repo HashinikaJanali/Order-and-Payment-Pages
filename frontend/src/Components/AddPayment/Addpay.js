@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { motion } from 'framer-motion';
 import { 
@@ -10,18 +10,21 @@ import {
   FaTruck, FaExchangeAlt, FaQuestionCircle, FaTrash,
   FaShoppingBag, FaArrowLeft, FaPlus, FaMinus
 } from 'react-icons/fa';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 import './Addpay.css';
 
 const ADD_PAYMENT_URL = "http://localhost:3000/payments/create";
 
 function Addpay({ onPaymentAdded }) {
+  const location = useLocation();
   const [cardNumber, setCardNumber] = useState('');
   const [cardExpiry, setCardExpiry] = useState('');
+  const [expiryDate, setExpiryDate] = useState(null);
   const [cardCVV, setCardCVV] = useState('');
-  const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState('USD');
+  const [amount, setAmount] = useState(location.state?.amount ? (location.state.amount / 100).toString() : '');
+  const [currency, setCurrency] = useState(location.state?.currency || 'LKR');
   const [status, setStatus] = useState('Successful');
-  const [paymentIntentId, setPaymentIntentId] = useState('');
   const [userId, setUserId] = useState(''); 
   const [cardHolderName, setCardHolderName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -53,28 +56,31 @@ function Addpay({ onPaymentAdded }) {
     }
   }, [cardNumber]);
 
+  useEffect(() => {
+    if (expiryDate) {
+      const month = expiryDate.getMonth() + 1;
+      const year = expiryDate.getFullYear().toString().slice(-2);
+      setCardExpiry(`${month.toString().padStart(2, '0')}/${year}`);
+    }
+  }, [expiryDate]);
+
   const validateCardNumber = (number) => {
     return number.length === 16 && /^[0-9]+$/.test(number); 
   };
 
-  const validateExpiryDate = (expiry) => {
-    const formatRegex = /^([0-9]{2})\/([0-9]{2})$/;
-    if (!formatRegex.test(expiry)) {
-      return { valid: false, message: "Expiry date must be in MM/YY format." };
+  const validateExpiryDate = (date) => {
+    if (!date) {
+      return { valid: false, message: "Expiry date is required." };
     }
-    const [inputMonth, inputYear] = expiry.split('/').map(Number);
+    
     const currentDate = new Date();
-    const currentMonth = currentDate.getMonth() + 1;
-    const currentYear = currentDate.getFullYear() % 100;
-
-    if (inputMonth < 1 || inputMonth > 12) {
-      return { valid: false, message: "Invalid month in expiry date." };
-    }
-    if (inputYear > currentYear || (inputYear === currentYear && inputMonth >= currentMonth)) {
-      return { valid: true };
-    } else {
+    currentDate.setHours(0, 0, 0, 0);
+    
+    if (date < currentDate) {
       return { valid: false, message: "This card has expired." };
     }
+    
+    return { valid: true };
   };
 
   const validateCVV = (cvv) => {
@@ -106,23 +112,14 @@ function Addpay({ onPaymentAdded }) {
     }
   };
 
-  const formatExpiryDate = (value) => {
-    const v = value.replace(/[^0-9]/g, '');
-    if (v.length >= 3) {
-      return `${v.slice(0, 2)}/${v.slice(2)}`;
-    }
-    return value;
-  };
-
   const validateForm = () => {
     const errors = {};
     if (!validateCardNumber(cardNumber.replace(/\s/g, ''))) errors.cardNumber = 'Card number must be 16 digits.';
-    const expiryValidation = validateExpiryDate(cardExpiry);
+    const expiryValidation = validateExpiryDate(expiryDate);
     if (!expiryValidation.valid) errors.cardExpiry = expiryValidation.message || 'Invalid expiry date.';
     if (!validateCVV(cardCVV)) errors.cardCVV = cardType === 'amex' ? 'CVV must be a 4-digit number.' : 'CVV must be a 3-digit number.';
-    if (!validateAmount(amount)) errors.amount = 'Amount must be greater than 0.';
+    if (!validateAmount(parseFloat(amount))) errors.amount = 'Amount must be greater than 0.';
     if (!currency) errors.currency = 'Currency is required.';
-    if (!paymentIntentId) errors.paymentIntentId = 'Payment Intent ID is required.';
     if (!validateCardHolderName(cardHolderName)) errors.cardHolderName = 'Cardholder name is required.';
 
     setFormErrors(errors);
@@ -137,6 +134,8 @@ function Addpay({ onPaymentAdded }) {
       return;
     }
 
+    const amountInCents = Math.round(parseFloat(amount) * 100);
+
     const paymentData = {
       userId, 
       cardDetails: { 
@@ -146,10 +145,9 @@ function Addpay({ onPaymentAdded }) {
         cardHolderName,
         cardType
       },
-      amount,
+      amount: amountInCents,
       currency,
       status,
-      paymentIntentId,
       paymentMethod, 
     };
 
@@ -163,9 +161,9 @@ function Addpay({ onPaymentAdded }) {
         setIsModalOpen(true);
         setCardNumber('');
         setCardExpiry('');
+        setExpiryDate(null);
         setCardCVV('');
         setAmount('');
-        setPaymentIntentId('');
         setCardHolderName('');
         setPaymentMethod('creditCard'); 
         setError(null);
@@ -208,12 +206,8 @@ function Addpay({ onPaymentAdded }) {
             </div>
             
             <div className="search-bar">
-              <FaSearch className="search-icon" />
-              <input 
-                type="text" 
-                placeholder="Search sweets, snacks..." 
-                aria-label="Search products"
-              />
+              <input type="text" placeholder="Search products..." />
+              <button className="search-btn"><FaSearch /></button>
             </div>
             
             <div className="header-icons">
@@ -313,13 +307,14 @@ function Addpay({ onPaymentAdded }) {
                 <label htmlFor="cardExpiry">
                   <FaCalendarAlt className="input-icon" /> Expiry Date
                 </label>
-                <input
-                  type="text"
-                  id="cardExpiry"
-                  placeholder="MM/YY"
-                  value={formatExpiryDate(cardExpiry)}
-                  onChange={(e) => setCardExpiry(e.target.value)}
-                  maxLength={5}
+                <DatePicker
+                  selected={expiryDate}
+                  onChange={(date) => setExpiryDate(date)}
+                  dateFormat="MM/yy"
+                  showMonthYearPicker
+                  minDate={new Date()}
+                  placeholderText="MM/YY"
+                  className="date-picker-input"
                   required
                 />
                 {formErrors.cardExpiry && <span className="error-message">{formErrors.cardExpiry}</span>}
@@ -349,7 +344,9 @@ function Addpay({ onPaymentAdded }) {
                   <select
                     value={currency}
                     onChange={(e) => setCurrency(e.target.value)}
+                    disabled={!!location.state?.amount}
                   >
+                    <option value="LKR">LKR (Rs.)</option>
                     <option value="USD">USD ($)</option>
                     <option value="EUR">EUR (€)</option>
                     <option value="GBP">GBP (£)</option>
@@ -362,24 +359,12 @@ function Addpay({ onPaymentAdded }) {
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     required
+                    disabled={!!location.state?.amount}
+                    step="0.01"
+                    min="0"
                   />
                 </div>
                 {formErrors.amount && <span className="error-message">{formErrors.amount}</span>}
-              </div>
-            </div>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="paymentIntentId">Payment Intent ID</label>
-                <input
-                  type="text"
-                  id="paymentIntentId"
-                  placeholder="pi_123456789"
-                  value={paymentIntentId}
-                  onChange={(e) => setPaymentIntentId(e.target.value)}
-                  required
-                />
-                {formErrors.paymentIntentId && <span className="error-message">{formErrors.paymentIntentId}</span>}
               </div>
             </div>
 
@@ -428,7 +413,11 @@ function Addpay({ onPaymentAdded }) {
               <div className="payment-details">
                 <div className="detail-row">
                   <span>Amount:</span>
-                  <span>{currency} {amount}</span>
+                  <span>
+                    {currency} {location.state?.amount 
+                      ? (location.state.amount / 100).toFixed(2) 
+                      : parseFloat(amount).toFixed(2)}
+                  </span>
                 </div>
                 <div className="detail-row">
                   <span>Card:</span>
